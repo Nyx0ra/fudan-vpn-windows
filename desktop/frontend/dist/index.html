@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>复旦 VPN Windows（预览版）</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1c1c1e;
+    --dim: #6b7280;
+    --line: #e3e5e9;
+    --brand: #4C9AFF;
+    --brand-deep: #1f6fe0;
+    --ok: #1a9c52;
+    --warn: #d98324;
+    --err: #d63a3a;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --card: #1e2127;
+      --text: #eceef2;
+      --dim: #949aa5;
+      --line: #2c3038;
+      --brand: #5aa2ff;
+      --brand-deep: #3d8bfd;
+      --ok: #3ecf7f;
+      --warn: #e5a13c;
+      --err: #ef5b5b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 22px 24px 24px;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.55 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    user-select: none;
+  }
+  header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--dim); flex: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--dim) 18%, transparent);
+  }
+  .dot.connected { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+  .dot.launching { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent); }
+  .dot.failed    { background: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 20%, transparent); }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .state { color: var(--dim); font-size: 12px; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .card h2 {
+    font-size: 12px; font-weight: 600; color: var(--dim);
+    margin: 0 0 10px; letter-spacing: .02em;
+  }
+
+  button {
+    font: inherit; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text);
+    padding: 7px 14px; cursor: pointer; transition: .15s;
+  }
+  button:hover:not(:disabled) { border-color: var(--dim); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary {
+    background: var(--brand); border-color: transparent; color: #fff; font-weight: 500;
+  }
+  button.primary:hover:not(:disabled) { background: var(--brand-deep); }
+  button.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 35%, var(--line)); }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=text] {
+    flex: 1 1 260px; min-width: 0;
+    font: inherit; font-family: var(--mono); font-size: 12px;
+    padding: 8px 10px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    user-select: text;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--brand); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 9px; }
+  .hint code {
+    font-family: var(--mono); font-size: 11.5px;
+    background: color-mix(in srgb, var(--dim) 12%, transparent);
+    padding: 1px 5px; border-radius: 4px; user-select: text;
+  }
+
+  #log {
+    height: 170px; overflow-y: auto; font-family: var(--mono); font-size: 11.5px;
+    line-height: 1.6; background: var(--bg); border-radius: 7px;
+    padding: 10px 12px; border: 1px solid var(--line);
+    user-select: text; white-space: pre-wrap; word-break: break-all;
+  }
+  #log .dim { color: var(--dim); }
+
+  textarea {
+    width: 100%; height: 190px; resize: vertical; display: none;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    padding: 10px 12px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    user-select: text;
+  }
+  textarea:focus { outline: none; border-color: var(--brand); }
+  #ruleMsg { font-size: 12px; margin-top: 8px; min-height: 18px; }
+  #ruleMsg.ok { color: var(--ok); }
+  #ruleMsg.bad { color: var(--err); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="dot"></div>
+  <h1>复旦 VPN Windows · 非官方预览版</h1>
+  <div class="state" id="stateText">未连接</div>
+</header>
+<div class="hint" id="healthDetail" role="status"></div>
+<div class="row" style="margin:10px 0 16px">
+  <button class="primary" id="btnResume">连接</button>
+  <button class="danger" id="btnStop" disabled>断开</button>
+  <button id="btnLogFile">查看日志</button>
+</div>
+<div class="hint">关闭窗口会隐藏到系统托盘，后台仍运行；请用托盘菜单“退出”停止受管理的引擎。</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>连接设置（先保存，再连接）</h2>
+  <label for="targetIP">强制经校园隧道访问的单个 IPv4 地址</label>
+  <div class="row" style="margin-top:8px">
+    <input id="targetIP" type="text" placeholder="填写你有权访问的校园服务器 IPv4" autocomplete="off" spellcheck="false">
+    <button id="btnSettings">保存设置</button>
+  </div>
+  <label style="display:block;margin-top:12px">
+    <input id="tlsCompat" type="checkbox">
+    为 175.186.248.37:441 启用隧道 TLS 兼容例外（默认关闭）
+  </label>
+  <div class="hint">启用后，仅此 TCP 数据隧道端点及其节点 TLS 延迟探测不验证服务器证书链、身份和有效期，可能受到中间人攻击；现场证书不因此成为可信证书。登录网站、OAuth HTTPS 和其他端点仍正常校验。仅在了解风险且确有需要时勾选。</div>
+  <div class="hint" id="settingsMsg" role="status">未设置目标时不会启动连接。修改目标或 TLS 模式前请先断开。</div>
+</div>
+
+<div class="card">
+  <h2>连接</h2>
+
+  <div id="disconnected">
+    <div class="row">
+      <button class="primary" id="btnLogin">打开登录页</button>
+      <button id="btnConnect" disabled>连接</button>
+    </div>
+    <input type="text" id="callback" placeholder="扫码登录后，把浏览器地址栏那条网址粘贴到这里"
+           style="margin-top:10px;width:100%" autocomplete="off" spellcheck="false">
+    <div class="hint" id="manualLoginHint">
+      扫一次码同时过掉密码和二次认证。登录完成后浏览器会停在
+      <code>vpn.fudan.edu.cn/passport/v1/auth/httpsOauth2?code=…</code>，
+      把整条网址复制回来即可，只要带 <code>code</code> 就行。
+    </div>
+  </div>
+
+  <div id="connected" class="hidden">
+    <div class="row">
+      <button class="danger" id="btnDisconnect">断开连接</button>
+      <span class="hint" style="margin:0">
+        分流口 <code>127.0.0.1:1082</code> · 裸隧道 <code>:1080</code>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>分流规则</h2>
+  <div class="row">
+    <button id="btnRules">编辑规则</button>
+    <button id="btnRulesPath">打开文件位置</button>
+    <button id="btnSaveRules" class="hidden">保存</button>
+    <button id="btnCancelRules" class="hidden">收起</button>
+  </div>
+  <textarea id="rules" spellcheck="false"></textarea>
+  <div id="ruleMsg"></div>
+  <div class="hint" id="rulesHint">
+    已保存的单个目标 /32 优先强制走 VPN，失败不会回落直连。其余连接按规则分流；规则保存后对新连接生效。
+  </div>
+</div>
+
+<div class="card">
+  <h2>运行日志</h2>
+  <div id="log"><span class="dim">等待连接…</span></div>
+</div>
+
+<details class="hint">
+  <summary>开源许可与项目来源</summary>
+  基于 wyleeyuan/fudan-vpn 和 mythologyli/zju-connect 的非官方 Windows 移植，按 GNU AGPL v3 发布，无担保。
+  分发包中的 LICENSE、NOTICE.md 和 THIRD_PARTY_NOTICES.txt 提供完整许可及来源；源码地址由分发者提供。
+</details>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const dot = $('dot'), stateText = $('stateText');
+const log = $('log');
+
+let phase = 'idle';
+let details = {};
+let ready = false;
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+
+function appendLog(line) {
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  const empty = log.querySelector('.dim');
+  if (empty) empty.remove();
+  const div = document.createElement('div');
+  div.textContent = line;
+  log.appendChild(div);
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function render() {
+  dot.className = 'dot' + (phase === 'idle' ? '' : ' ' + phase);
+  const labels = {
+    idle: '未连接', launching: '正在连接…', connected: '已连接', failed: '连接失败'
+  };
+  stateText.textContent = labels[phase] || phase;
+  $('healthDetail').textContent = (details.pid ? ('引擎 PID ' + details.pid + (details.owned ? ' · 客户端管理 · ' : ' · 尚未接管 · ')) : '') + (details.error || '尚未连接') + (phase === 'connected' ? '。这不保证实验室 SSH 服务持续可用。' : '');
+  $('btnResume').disabled = details.canConnect === false;
+  $('btnResume').textContent = details.external ? '接管并重新连接' : ((phase === 'connected' || phase === 'failed') ? '重新连接' : '连接');
+  $('btnStop').disabled = !details.canDisconnect;
+
+  const isConnected = phase === 'connected';
+  const busy = phase === 'launching';
+
+  $('disconnected').classList.toggle('hidden', isConnected);
+  $('connected').classList.toggle('hidden', !isConnected);
+
+  $('btnLogin').disabled = busy || details.canConnect === false;
+  $('btnConnect').disabled = busy || !$('callback').value.trim();
+  $('btnConnect').textContent = busy ? '连接中…' : '连接';
+  const settingsLocked = busy || !!details.canDisconnect;
+  $('targetIP').disabled = settingsLocked;
+  $('tlsCompat').disabled = settingsLocked;
+  $('btnSettings').disabled = settingsLocked;
+}
+
+async function refresh() {
+  try {
+    const s = await window.go.main.App.Status();
+    details = s;
+    phase = s.phase;
+    render();
+    if (s.showLogs) {
+      const lines = await window.go.main.App.Logs();
+      log.replaceChildren();
+      (lines || []).forEach(appendLog);
+      log.tabIndex = 0;
+      log.scrollIntoView({block:'start'});
+      log.focus({preventScroll:true});
+    }
+  } catch (e) { /* 绑定还没就绪 */ }
+}
+
+function bind() {
+  if (!window.go || !window.go.main) { setTimeout(bind, 60); return; }
+  ready = true;
+
+  window.runtime.EventsOn('log', appendLog);
+  window.runtime.EventsOn('phase', () => refresh());
+  window.runtime.EventsOn('show-logs', () => refresh());
+  $('btnResume').onclick = async () => { try { await window.go.main.App.Reconnect(); } catch(e) { appendLog('连接未完成：' + e); } await refresh(); };
+  $('btnStop').onclick = async () => { await window.go.main.App.Disconnect(); await refresh(); };
+  $('btnLogFile').onclick = () => window.go.main.App.ViewLogs();
+  window.go.main.App.GetConnectionSettings().then(s => {
+    $('targetIP').value = s.targetIP || '';
+    $('tlsCompat').checked = s.tunnelTLSCompatibility === true;
+    if (s.targetIP) $('settingsMsg').textContent = '已保存目标 ' + s.targetIP + '/32；修改后请保存。';
+  }).catch(e => { $('settingsMsg').textContent = '读取设置失败：' + e; });
+  $('btnSettings').onclick = async () => {
+    try {
+      await window.go.main.App.SaveConnectionSettings({
+        targetIP: $('targetIP').value.trim(),
+        tunnelTLSCompatibility: $('tlsCompat').checked
+      });
+      $('settingsMsg').textContent = '设置已保存；仅当前目标 /32 强制走 VPN。';
+    } catch(e) { $('settingsMsg').textContent = '保存失败：' + e; }
+    await refresh();
+  };
+
+  window.go.main.App.AutomaticLogin().then((automatic) => {
+    if (!automatic) return;
+    $('btnConnect').classList.add('hidden');
+    $('callback').classList.add('hidden');
+    $('manualLoginHint').textContent = '在弹出的复旦认证窗口中完成登录，客户端会自动接管认证回调。';
+  }).catch(() => {});
+
+  $('btnLogin').onclick = async () => {
+    $('btnLogin').disabled = true;
+    try {
+      await window.go.main.App.OpenLogin();
+    } catch (e) {
+      appendLog('登录失败：' + e);
+      phase = 'failed';
+    } finally {
+      render();
+    }
+  };
+
+  $('callback').oninput = () => render();
+
+  $('btnConnect').onclick = async () => {
+    const url = $('callback').value.trim();
+    if (!url) return;
+    try {
+      await window.go.main.App.Connect(url);
+      $('callback').value = '';
+    } catch (e) {
+      appendLog('连接失败：' + e);
+      phase = 'failed';
+      render();
+    }
+  };
+
+  $('btnDisconnect').onclick = () => window.go.main.App.Disconnect();
+
+  $('btnRules').onclick = async () => {
+    const text = await window.go.main.App.ReadRules();
+    $('rules').value = text;
+    $('rules').style.display = 'block';
+    $('btnSaveRules').classList.remove('hidden');
+    $('btnCancelRules').classList.remove('hidden');
+    $('ruleMsg').textContent = '';
+  };
+
+  $('btnCancelRules').onclick = () => {
+    $('rules').style.display = 'none';
+    $('btnSaveRules').classList.add('hidden');
+    $('btnCancelRules').classList.add('hidden');
+    $('ruleMsg').textContent = '';
+  };
+
+  $('btnSaveRules').onclick = async () => {
+    try {
+      await window.go.main.App.SaveRules($('rules').value);
+      $('ruleMsg').className = 'ok';
+      $('ruleMsg').textContent = '已保存，新建连接按新规则走；强制目标 /32 不受此处规则覆盖';
+    } catch (e) {
+      $('ruleMsg').className = 'bad';
+      $('ruleMsg').textContent = String(e);
+    }
+  };
+
+  $('btnRulesPath').onclick = () => window.go.main.App.RevealRules();
+
+  window.go.main.App.Logs().then((lines) => {
+    if (lines && lines.length) { log.innerHTML = ''; lines.forEach(appendLog); }
+  });
+  refresh();
+  setInterval(refresh, 1000);
+}
+
+document.addEventListener('DOMContentLoaded', bind);
+</script>
+</body>
+</html>

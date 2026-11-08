@@ -1,0 +1,29 @@
+name: Windows preview
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: |
+            engine/go.sum
+            desktop/go.sum
+      - name: Test, build and verify Windows package
+        shell: pwsh
+        run: ./scripts/Build-Windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64-preview
+          path: |
+            build/FudanVPN-Windows-*-amd64.zip
+            build/SHA256SUMS
+          if-no-files-found: error

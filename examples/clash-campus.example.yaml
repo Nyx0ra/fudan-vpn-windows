@@ -1,0 +1,14 @@
+# 片段：合并到自己的持久扩展，不要覆盖完整配置。
+# 192.0.2.10 是文档保留地址，须替换为与桌面设置相同的单个目标。
+# 不添加 DNS、默认路由或整段校园网规则；不要把目标 /32 排除出 TUN。
+proxies:
+  - name: Campus-VPN-Target
+    type: socks5
+    server: 127.0.0.1
+    port: 1082
+    udp: false
+rules:
+  - PROCESS-NAME,fudan-connect.exe,DIRECT
+  - AND,((IP-CIDR,192.0.2.10/32,no-resolve),(NETWORK,UDP)),REJECT
+  - AND,((IP-CIDR,192.0.2.10/32,no-resolve),(NETWORK,TCP)),Campus-VPN-Target
+# 把以上规则放到现有通用私网规则之前，保留原订阅和其余规则。
